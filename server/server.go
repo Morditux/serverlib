@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Morditux/serverlib/server/sessions"
 	"github.com/Morditux/serverlib/templates"
 )
 
@@ -17,9 +18,10 @@ var ServerInstance *Server
 
 // Server represents the HTTP server.
 type Server struct {
-	httpServer *http.Server
-	router     *http.ServeMux
-	t          *templates.Templates
+	httpServer     *http.Server
+	router         *http.ServeMux
+	SessionManager sessions.Sessions
+	t              *templates.Templates
 }
 
 type ServerConfig struct {
@@ -36,6 +38,7 @@ type ServerConfig struct {
 	ErrorLog                     *log.Logger
 	BaseContext                  func(net.Listener) context.Context
 	ConnContext                  func(ctx context.Context, c net.Conn) context.Context
+	SessionManager               sessions.Sessions
 }
 
 // NewServer creates a new instance of Server with the provided configuration.
@@ -52,8 +55,9 @@ func NewServer(config ...ServerConfig) *Server {
 	if len(config) == 0 {
 		mux := http.NewServeMux()
 		serverConfig = ServerConfig{
-			Address: ":8080",
-			Handler: mux,
+			Address:        ":8080",
+			Handler:        mux,
+			SessionManager: sessions.NewMemorySessions(),
 		}
 	} else {
 		serverConfig = config[0]
@@ -75,8 +79,8 @@ func NewServer(config ...ServerConfig) *Server {
 			BaseContext:       serverConfig.BaseContext,
 			ConnContext:       serverConfig.ConnContext,
 		},
-
-		router: serverConfig.Handler.(*http.ServeMux),
+		router:         serverConfig.Handler.(*http.ServeMux),
+		SessionManager: serverConfig.SessionManager,
 	}
 	return ServerInstance
 }
@@ -116,4 +120,10 @@ func (s *Server) Render(w io.Writer, template string, data map[string]interface{
 // It provides access to the templates associated with the server instance.
 func (s *Server) Templates() *templates.Templates {
 	return s.t
+}
+
+// SessionManager returns the server's session manager.
+// It provides access to the session manager associated with the server instance.
+func (s *Server) Sessions() sessions.Sessions {
+	return s.SessionManager
 }
