@@ -11,17 +11,23 @@ import (
 
 	"github.com/Morditux/serverlib/server/sessions"
 	"github.com/Morditux/serverlib/templates"
+	"github.com/docker/distribution/uuid"
 )
 
 // ServerInstance represents the singleton instance of the server.
 var ServerInstance *Server
 
-// Server represents the HTTP server.
+// Server represents an HTTP server with routing and session management capabilities.
+// It includes an HTTP server, a router for handling HTTP requests, a session manager
+// for managing user sessions, a session key for session security, and a template
+// engine for rendering HTML templates.
 type Server struct {
 	httpServer     *http.Server
 	router         *http.ServeMux
-	SessionManager sessions.Sessions
-	t              *templates.Templates
+	sessionManager sessions.Sessions
+	sessionKey     string
+
+	t *templates.Templates
 }
 
 type ServerConfig struct {
@@ -39,6 +45,7 @@ type ServerConfig struct {
 	BaseContext                  func(net.Listener) context.Context
 	ConnContext                  func(ctx context.Context, c net.Conn) context.Context
 	SessionManager               sessions.Sessions
+	SessionKey                   string
 }
 
 // NewServer creates a new instance of Server with the provided configuration.
@@ -58,6 +65,7 @@ func NewServer(config ...ServerConfig) *Server {
 			Address:        ":8080",
 			Handler:        mux,
 			SessionManager: sessions.NewMemorySessions(),
+			SessionKey:     uuid.New().String(),
 		}
 	} else {
 		serverConfig = config[0]
@@ -80,7 +88,8 @@ func NewServer(config ...ServerConfig) *Server {
 			ConnContext:       serverConfig.ConnContext,
 		},
 		router:         serverConfig.Handler.(*http.ServeMux),
-		SessionManager: serverConfig.SessionManager,
+		sessionManager: serverConfig.SessionManager,
+		sessionKey:     serverConfig.SessionKey,
 	}
 	return ServerInstance
 }
@@ -125,5 +134,43 @@ func (s *Server) Templates() *templates.Templates {
 // SessionManager returns the server's session manager.
 // It provides access to the session manager associated with the server instance.
 func (s *Server) Sessions() sessions.Sessions {
-	return s.SessionManager
+	return s.sessionManager
+}
+
+// SessionKey returns the session key associated with the server instance.
+// This key is used to identify and manage user sessions.
+func (s *Server) SessionKey() string {
+	return s.sessionKey
+}
+
+// GetSession retrieves the session associated with the request's cookie.
+// If the session does not exist, a new session is created and a new cookie is set.
+//
+// Parameters:
+//   - w: The HTTP response writer.
+//   - r: The HTTP request.
+//
+// Returns:
+//   - sessions.Session: The session associated with the request.
+//   - bool: A boolean indicating whether the session was retrieved (true) or newly created (false).
+func (s *Server) GetSession(w http.ResponseWriter, r *http.Request) (sessions.Session, bool) {
+	cookie, err := r.Cookie(s.sessionKey)
+	if err != nil {
+		return nil, false
+	}
+	sessionID := cookie.Value
+	session, ok := s.sessionManager.Get(sessionID)
+	if ok != true {
+		// Create a new session if the session ID is not found
+		sessionID = uuid.New().String()
+		session = sessions.NewMemorySession(sessionID)
+		s.sessionManager.Set(sessionID, session)
+		http.SetCookie(w, &http.Cookie{
+			Name:     s.sessionKey,
+			Value:    sessionID,
+			HttpOnly: true,
+			MaxAge:   3600 * 24 * 7, // 1 week
+		})
+	}
+	return session, ok
 }
