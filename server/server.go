@@ -11,7 +11,7 @@ import (
 
 	"github.com/Morditux/serverlib/server/sessions"
 	"github.com/Morditux/serverlib/templates"
-	"github.com/docker/distribution/uuid"
+	"github.com/google/uuid"
 )
 
 // ServerInstance represents the singleton instance of the server.

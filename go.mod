@@ -2,4 +2,4 @@ module github.com/Morditux/serverlib
 
 go 1.23.0
 
-require github.com/docker/distribution v2.8.3+incompatible
+require github.com/google/uuid v1.6.0
