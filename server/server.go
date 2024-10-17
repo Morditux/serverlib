@@ -112,6 +112,8 @@ func (s *Server) Render(w io.Writer, template string, data map[string]interface{
 	s.t.Execute(w, template, data)
 }
 
+// Templates returns the server's templates.
+// It provides access to the templates associated with the server instance.
 func (s *Server) Templates() *templates.Templates {
 	return s.t
 }
