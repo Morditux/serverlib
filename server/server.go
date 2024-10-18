@@ -8,11 +8,21 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/Morditux/serverlib/server/sessions"
 	"github.com/Morditux/serverlib/templates"
 	"github.com/google/uuid"
+)
+
+type LogLevel int
+
+const (
+	None LogLevel = iota
+	Info
+	Debug
+	Error
 )
 
 // ServerInstance represents the singleton instance of the server.
@@ -27,8 +37,10 @@ type Server struct {
 	router         *http.ServeMux
 	sessionManager sessions.Sessions
 	sessionKey     string
-
-	t *templates.Templates
+	logger         *log.Logger
+	dateFormat     func(time.Time) string
+	t              *templates.Templates
+	logLevel       LogLevel
 }
 
 type ServerConfig struct {
@@ -47,6 +59,8 @@ type ServerConfig struct {
 	ConnContext                  func(ctx context.Context, c net.Conn) context.Context
 	SessionManager               sessions.Sessions
 	SessionKey                   string
+	DateFormat                   func(time.Time) string
+	LogLevel                     LogLevel
 }
 
 // NewServer creates a new instance of Server with the provided configuration.
@@ -83,7 +97,14 @@ func NewServer(config ...ServerConfig) *Server {
 	if serverConfig.Address == "" {
 		serverConfig.Address = ":8080"
 	}
-
+	if serverConfig.ErrorLog == nil {
+		serverConfig.ErrorLog = log.New(os.Stderr, "", log.LstdFlags)
+	}
+	if serverConfig.DateFormat == nil {
+		serverConfig.DateFormat = func(t time.Time) string {
+			return t.Format(time.ANSIC)
+		}
+	}
 	ServerInstance = &Server{
 		t: templates.NewTemplates(),
 		httpServer: &http.Server{
@@ -103,6 +124,9 @@ func NewServer(config ...ServerConfig) *Server {
 		router:         serverConfig.Handler.(*http.ServeMux),
 		sessionManager: serverConfig.SessionManager,
 		sessionKey:     serverConfig.SessionKey,
+		logger:         serverConfig.ErrorLog,
+		dateFormat:     serverConfig.DateFormat,
+		logLevel:       serverConfig.LogLevel,
 	}
 	return ServerInstance
 }
@@ -192,4 +216,26 @@ func (s *Server) GetSession(w http.ResponseWriter, r *http.Request) (sessions.Se
 		})
 	}
 	return session, ok
+}
+
+func (s *Server) SetLogLevel(level LogLevel) {
+	s.logLevel = level
+}
+
+func LogInfo(message string, value string) {
+	if ServerInstance.logLevel >= Info {
+		ServerInstance.logger.Printf("INFO - %s: %s\n", message, value)
+	}
+}
+
+func LogDebug(message string, value string) {
+	if ServerInstance.logLevel >= Debug {
+		ServerInstance.logger.Printf("DEBUG - %s: %s\n", message
+	}
+}
+
+func LogError(message string, value string) {
+	if ServerInstance.logLevel >= Error {
+		ServerInstance.logger.Printf("ERROR - %s: %s\n", message, value)
+	}
 }
