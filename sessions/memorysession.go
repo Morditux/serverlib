@@ -86,11 +86,14 @@ func (s *MemorySession) Id() string {
 // Get retrieves the value associated with the given key from the memory session.
 // It returns the value and a boolean indicating whether the key was found.
 // The method is thread-safe, using a read lock to ensure concurrent access.
-func (s *MemorySession) Get(key string) (any, bool) {
+func (s *MemorySession) Get(key string) any {
 	s.mut.RLock()
 	defer s.mut.RUnlock()
 	value, ok := s.data[key]
-	return value, ok
+	if !ok {
+		return nil
+	}
+	return value
 }
 
 // Set stores a key-value pair in the memory session. It locks the session
@@ -103,4 +106,13 @@ func (s *MemorySession) Set(key string, value any) {
 	s.mut.Lock()
 	defer s.mut.Unlock()
 	s.data[key] = value
+}
+
+// Exists checks if the given key exists in the memory session.
+// It returns a boolean indicating whether the key is present in the session.
+func (s *MemorySession) Exists(key string) bool {
+	s.mut.RLock()
+	defer s.mut.RUnlock()
+	_, ok := s.data[key]
+	return ok
 }

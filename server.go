@@ -218,6 +218,12 @@ func (s *Server) GetSession(w http.ResponseWriter, r *http.Request) (sessions.Se
 	return session, ok
 }
 
+// GetSession retrieves the session associated with the request's cookie.
+// shorthand for ServerInstance.GetSession(w, r)
+func GetSession(w http.ResponseWriter, r *http.Request) (sessions.Session, bool) {
+	return ServerInstance.GetSession(w, r)
+}
+
 // SetLogLevel sets the logging level for the server.
 //
 // Parameters:
