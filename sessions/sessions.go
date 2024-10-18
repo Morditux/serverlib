@@ -35,4 +35,6 @@ type Sessions interface {
 	Set(id string, session Session)
 	// Delete deletes the session associated with the given ID.
 	Delete(id string)
+	// Create a new session with a new ID.
+	New() Session
 }

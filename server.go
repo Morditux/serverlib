@@ -186,6 +186,19 @@ func (s *Server) SessionKey() string {
 	return s.sessionKey
 }
 
+func createSession(w http.ResponseWriter) sessions.Session {
+	session := ServerInstance.sessionManager.New()
+	sessionID := session.Id()
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     ServerInstance.sessionKey,
+		Value:    sessionID,
+		HttpOnly: true,
+		MaxAge:   3600 * 24 * 7, // 1 week
+	})
+	return session
+}
+
 // GetSession retrieves the session associated with the request's cookie.
 // If the session does not exist, a new session is created and a new cookie is set.
 //
@@ -199,21 +212,14 @@ func (s *Server) SessionKey() string {
 func (s *Server) GetSession(w http.ResponseWriter, r *http.Request) (sessions.Session, bool) {
 	cookie, err := r.Cookie(s.sessionKey)
 	if err != nil {
-		return nil, false
+		session := createSession(w)
+		return session, false
 	}
 	sessionID := cookie.Value
 	session, ok := s.sessionManager.Get(sessionID)
 	if !ok {
 		// Create a new session if the session ID is not found
-		sessionID = uuid.New().String()
-		session = sessions.NewMemorySession(sessionID)
-		s.sessionManager.Set(sessionID, session)
-		http.SetCookie(w, &http.Cookie{
-			Name:     s.sessionKey,
-			Value:    sessionID,
-			HttpOnly: true,
-			MaxAge:   3600 * 24 * 7, // 1 week
-		})
+		session = createSession(w)
 	}
 	return session, ok
 }

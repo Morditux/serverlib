@@ -1,6 +1,10 @@
 package sessions
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/google/uuid"
+)
 
 // MemorySession represents an in-memory session with a unique identifier,
 // a map to store session data, and a read-write mutex for concurrent access control.
@@ -59,6 +63,17 @@ func (s *MemorySessions) Delete(id string) {
 	s.mut.Lock()
 	defer s.mut.Unlock()
 	delete(s.sessions, id)
+}
+
+// New creates a new MemorySession with a unique identifier.
+// It generates a new UUID string to use as the session ID.
+//
+// Returns:
+//   - A pointer to a newly created MemorySession instance.
+func (s *MemorySessions) New() Session {
+	session := NewMemorySession(uuid.New().String())
+	s.Set(session.Id(), session)
+	return session
 }
 
 // NewMemorySession creates a new MemorySession with the given id.
