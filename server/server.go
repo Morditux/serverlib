@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"time"
@@ -70,6 +71,18 @@ func NewServer(config ...ServerConfig) *Server {
 	} else {
 		serverConfig = config[0]
 	}
+	if serverConfig.SessionKey == "" {
+		serverConfig.SessionKey = uuid.New().String()
+	}
+	if serverConfig.SessionManager == nil {
+		serverConfig.SessionManager = sessions.NewMemorySessions()
+	}
+	if serverConfig.Handler == nil {
+		serverConfig.Handler = http.NewServeMux()
+	}
+	if serverConfig.Address == "" {
+		serverConfig.Address = ":8080"
+	}
 
 	ServerInstance = &Server{
 		t: templates.NewTemplates(),
@@ -96,32 +109,38 @@ func NewServer(config ...ServerConfig) *Server {
 
 // Start starts the server.
 func (s *Server) Start() error {
+	slog.Info("Server started", "address", s.httpServer.Addr)
 	return s.httpServer.ListenAndServe()
 }
 
 // Stop stops the server.
 func (s *Server) Stop() error {
+	slog.Info("Server stopped", "address", s.httpServer.Addr)
 	return s.httpServer.Close()
 }
 
 // HandleFunc registers a function to handle HTTP requests with the given pattern.
 func (s *Server) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
+	slog.Info("Registred HandleFunc", "pattern", pattern)
 	s.router.HandleFunc(pattern, handler)
 }
 
 // Handle registers a handler to handle HTTP requests with the given pattern.
 func (s *Server) Handle(pattern string, handler http.Handler) {
+	slog.Info("Registred handle", "pattern", pattern)
 	s.router.Handle(pattern, handler)
 }
 
 // AddTemplateSource adds a new template source to the server's template manager.
 // The source parameter specifies the template source path to be added.
 func (s *Server) AddTemplateSource(source string) {
+	slog.Info("Adding template source", "source", source)
 	s.t.AddSource(source)
 }
 
 // Render renders the specified template with the given data and writes the result to the response writer.
 func (s *Server) Render(w io.Writer, template string, data map[string]interface{}) {
+	slog.Info("Rendering template", "template", template)
 	s.t.Execute(w, template, data)
 }
 
@@ -160,7 +179,7 @@ func (s *Server) GetSession(w http.ResponseWriter, r *http.Request) (sessions.Se
 	}
 	sessionID := cookie.Value
 	session, ok := s.sessionManager.Get(sessionID)
-	if ok != true {
+	if !ok {
 		// Create a new session if the session ID is not found
 		sessionID = uuid.New().String()
 		session = sessions.NewMemorySession(sessionID)
