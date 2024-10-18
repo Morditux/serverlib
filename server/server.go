@@ -218,22 +218,43 @@ func (s *Server) GetSession(w http.ResponseWriter, r *http.Request) (sessions.Se
 	return session, ok
 }
 
+// SetLogLevel sets the logging level for the server.
+//
+// Parameters:
+//
+//	level (LogLevel): The desired logging level.
+//
+// Usage:
+//
+//	server.SetLogLevel(LogLevelDebug)
 func (s *Server) SetLogLevel(level LogLevel) {
 	s.logLevel = level
 }
 
+// LogInfo logs an informational message if the server's log level is set to Info or higher.
+// It takes two parameters:
+// - message: A string representing the message to be logged.
+// - value: A string representing additional information to be logged alongside the message.
 func LogInfo(message string, value string) {
 	if ServerInstance.logLevel >= Info {
 		ServerInstance.logger.Printf("INFO - %s: %s\n", message, value)
 	}
 }
 
+// LogDebug logs a debug message if the server's log level is set to Debug or higher.
+// It takes two parameters:
+// - message: A string representing the debug message.
+// - value: A string representing additional information to log with the message.
 func LogDebug(message string, value string) {
 	if ServerInstance.logLevel >= Debug {
-		ServerInstance.logger.Printf("DEBUG - %s: %s\n", message
+		ServerInstance.logger.Printf("DEBUG - %s: %s\n", message, value)
 	}
 }
 
+// LogError logs an error message with a specified value if the server's log level is set to Error or higher.
+// Parameters:
+//   - message: A string representing the error message to be logged.
+//   - value: A string representing additional information or context about the error.
 func LogError(message string, value string) {
 	if ServerInstance.logLevel >= Error {
 		ServerInstance.logger.Printf("ERROR - %s: %s\n", message, value)
