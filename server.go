@@ -11,7 +11,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/Morditux/serverlib/server/sessions"
+	"github.com/Morditux/serverlib/sessions"
 	"github.com/Morditux/serverlib/templates"
 	"github.com/google/uuid"
 )
