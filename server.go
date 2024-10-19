@@ -5,13 +5,24 @@ import (
 	"crypto/tls"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/Morditux/serverlib/sessions"
 	"github.com/Morditux/serverlib/templates"
 	"github.com/google/uuid"
+)
+
+type LogLevel int
+
+const (
+	None LogLevel = iota
+	Info
+	Debug
+	Error
 )
 
 // ServerInstance represents the singleton instance of the server.
@@ -22,13 +33,14 @@ var ServerInstance *Server
 // for managing user sessions, a session key for session security, and a template
 // engine for rendering HTML templates.
 type Server struct {
-	httpServer      *http.Server
-	router          *http.ServeMux
-	sessionManager  sessions.Sessions
-	contextInjector *contextInjector
-	sessionKey      string
-
-	t *templates.Templates
+	httpServer     *http.Server
+	router         *http.ServeMux
+	sessionManager sessions.Sessions
+	sessionKey     string
+	logger         *log.Logger
+	dateFormat     func(time.Time) string
+	t              *templates.Templates
+	logLevel       LogLevel
 }
 
 type ServerConfig struct {
@@ -47,6 +59,8 @@ type ServerConfig struct {
 	ConnContext                  func(ctx context.Context, c net.Conn) context.Context
 	SessionManager               sessions.Sessions
 	SessionKey                   string
+	DateFormat                   func(time.Time) string
+	LogLevel                     LogLevel
 }
 
 type contextInjector struct {
@@ -79,7 +93,7 @@ func (i *contextInjector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func NewServer(config ...ServerConfig) *Server {
 	var serverConfig ServerConfig
 	if len(config) == 0 {
-		mux := http.NewServeMux()
+		mux := newContextInjector(serverConfig.Handler)
 		serverConfig = ServerConfig{
 			Address:        ":8080",
 			Handler:        mux,
@@ -89,11 +103,29 @@ func NewServer(config ...ServerConfig) *Server {
 	} else {
 		serverConfig = config[0]
 	}
-	ci := newContextInjector(serverConfig.Handler)
-	if serverConfig.Handler == nil {
-		serverConfig.Handler = ci
+	if serverConfig.SessionKey == "" {
+		serverConfig.SessionKey = uuid.New().String()
 	}
-	serverConfig.Handler = ci
+	if serverConfig.SessionManager == nil {
+		serverConfig.SessionManager = sessions.NewMemorySessions()
+	}
+	if serverConfig.Address == "" {
+		serverConfig.Address = ":8080"
+	}
+	if serverConfig.ErrorLog == nil {
+		serverConfig.ErrorLog = log.New(os.Stderr, "", log.LstdFlags)
+	}
+	if serverConfig.DateFormat == nil {
+		serverConfig.DateFormat = func(t time.Time) string {
+			return t.Format(time.ANSIC)
+		}
+	}
+	if serverConfig.Handler == nil {
+		serverConfig.Handler = newContextInjector(http.NewServeMux())
+	} else {
+		serverConfig.Handler = newContextInjector(serverConfig.Handler)
+	}
+
 	ServerInstance = &Server{
 		t: templates.NewTemplates(),
 		httpServer: &http.Server{
@@ -113,43 +145,48 @@ func NewServer(config ...ServerConfig) *Server {
 		router:         serverConfig.Handler.(*http.ServeMux),
 		sessionManager: serverConfig.SessionManager,
 		sessionKey:     serverConfig.SessionKey,
+		logger:         serverConfig.ErrorLog,
+		dateFormat:     serverConfig.DateFormat,
+		logLevel:       serverConfig.LogLevel,
 	}
-	ServerInstance.contextInjector = ci
 	return ServerInstance
 }
 
 // Start starts the server.
 func (s *Server) Start() error {
+	slog.Info("Server started", "address", s.httpServer.Addr)
 	return s.httpServer.ListenAndServe()
 }
 
 // Stop stops the server.
 func (s *Server) Stop() error {
+	slog.Info("Server stopped", "address", s.httpServer.Addr)
 	return s.httpServer.Close()
 }
 
 // HandleFunc registers a function to handle HTTP requests with the given pattern.
 func (s *Server) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
+	slog.Info("Registred HandleFunc", "pattern", pattern)
 	s.router.HandleFunc(pattern, handler)
 }
 
 // Handle registers a handler to handle HTTP requests with the given pattern.
 func (s *Server) Handle(pattern string, handler http.Handler) {
+	slog.Info("Registred handle", "pattern", pattern)
 	s.router.Handle(pattern, handler)
 }
 
 // AddTemplateSource adds a new template source to the server's template manager.
 // The source parameter specifies the template source path to be added.
 func (s *Server) AddTemplateSource(source string) {
+	slog.Info("Adding template source", "source", source)
 	s.t.AddSource(source)
 }
 
 // Render renders the specified template with the given data and writes the result to the response writer.
 func (s *Server) Render(w io.Writer, template string, data map[string]interface{}) {
-	err := s.t.Execute(w, template, data)
-	if err != nil {
-		return
-	}
+	slog.Info("Rendering template", "template", template)
+	s.t.Execute(w, template, data)
 }
 
 // Templates returns the server's templates.
@@ -158,8 +195,8 @@ func (s *Server) Templates() *templates.Templates {
 	return s.t
 }
 
-// Sessions returns the session manager associated with the server instance.
-// It provides access to the session management functionalities.
+// SessionManager returns the server's session manager.
+// It provides access to the session manager associated with the server instance.
 func (s *Server) Sessions() sessions.Sessions {
 	return s.sessionManager
 }
@@ -168,6 +205,19 @@ func (s *Server) Sessions() sessions.Sessions {
 // This key is used to identify and manage user sessions.
 func (s *Server) SessionKey() string {
 	return s.sessionKey
+}
+
+func createSession(w http.ResponseWriter) sessions.Session {
+	session := ServerInstance.sessionManager.New()
+	sessionID := session.Id()
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     ServerInstance.sessionKey,
+		Value:    sessionID,
+		HttpOnly: true,
+		MaxAge:   3600 * 24 * 7, // 1 week
+	})
+	return session
 }
 
 // GetSession retrieves the session associated with the request's cookie.
@@ -183,21 +233,63 @@ func (s *Server) SessionKey() string {
 func (s *Server) GetSession(w http.ResponseWriter, r *http.Request) (sessions.Session, bool) {
 	cookie, err := r.Cookie(s.sessionKey)
 	if err != nil {
-		return nil, false
+		session := createSession(w)
+		return session, false
 	}
 	sessionID := cookie.Value
 	session, ok := s.sessionManager.Get(sessionID)
-	if ok != true {
+	if !ok {
 		// Create a new session if the session ID is not found
-		sessionID = uuid.New().String()
-		session = sessions.NewMemorySession(sessionID)
-		s.sessionManager.Set(sessionID, session)
-		http.SetCookie(w, &http.Cookie{
-			Name:     s.sessionKey,
-			Value:    sessionID,
-			HttpOnly: true,
-			MaxAge:   3600 * 24 * 7, // 1 week
-		})
+		session = createSession(w)
 	}
 	return session, ok
+}
+
+// GetSession retrieves the session associated with the request's cookie.
+// shorthand for ServerInstance.GetSession(w, r)
+func GetSession(w http.ResponseWriter, r *http.Request) (sessions.Session, bool) {
+	return ServerInstance.GetSession(w, r)
+}
+
+// SetLogLevel sets the logging level for the server.
+//
+// Parameters:
+//
+//	level (LogLevel): The desired logging level.
+//
+// Usage:
+//
+//	server.SetLogLevel(LogLevelDebug)
+func (s *Server) SetLogLevel(level LogLevel) {
+	s.logLevel = level
+}
+
+// LogInfo logs an informational message if the server's log level is set to Info or higher.
+// It takes two parameters:
+// - message: A string representing the message to be logged.
+// - value: A string representing additional information to be logged alongside the message.
+func LogInfo(message string, value string) {
+	if ServerInstance.logLevel >= Info {
+		ServerInstance.logger.Printf("INFO - %s: %s\n", message, value)
+	}
+}
+
+// LogDebug logs a debug message if the server's log level is set to Debug or higher.
+// It takes two parameters:
+// - message: A string representing the debug message.
+// - value: A string representing additional information to log with the message.
+func LogDebug(message string, value string) {
+	if ServerInstance.logLevel >= Debug {
+		ServerInstance.logger.Printf("DEBUG - %s: %s\n", message, value)
+	}
+}
+
+// LogError logs an error message with a specified value if the server's log level is set to Error or higher.
+// Parameters:
+//   - message: A string representing the error message to be logged.
+//   - value: A string representing additional information or context about the error.
+func LogError(message string, value string) {
+	if ServerInstance.logLevel >= Error {
+		ServerInstance.logger.Printf("ERROR - %s: %s\n", message, value)
+	}
 }
