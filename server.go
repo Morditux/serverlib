@@ -45,7 +45,6 @@ type Server struct {
 
 type ServerConfig struct {
 	Address                      string
-	Handler                      http.Handler
 	DisableGeneralOptionsHandler bool
 	TLSConfig                    *tls.Config
 	ReadTimeout                  time.Duration
@@ -64,11 +63,11 @@ type ServerConfig struct {
 }
 
 type contextInjector struct {
-	mux http.Handler
+	mux *http.ServeMux
 	key string
 }
 
-func newContextInjector(mux http.Handler) *contextInjector {
+func newContextInjector(mux *http.ServeMux) *contextInjector {
 	return &contextInjector{
 		mux: mux,
 	}
@@ -92,11 +91,10 @@ func (i *contextInjector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 //   - *Server: A pointer to the newly created Server instance.
 func NewServer(config ...ServerConfig) *Server {
 	var serverConfig ServerConfig
+	mux := newContextInjector(http.NewServeMux())
 	if len(config) == 0 {
-		mux := newContextInjector(serverConfig.Handler)
 		serverConfig = ServerConfig{
 			Address:        ":8080",
-			Handler:        mux,
 			SessionManager: sessions.NewMemorySessions(),
 			SessionKey:     uuid.New().String(),
 		}
@@ -120,17 +118,11 @@ func NewServer(config ...ServerConfig) *Server {
 			return t.Format(time.ANSIC)
 		}
 	}
-	if serverConfig.Handler == nil {
-		serverConfig.Handler = newContextInjector(http.NewServeMux())
-	} else {
-		serverConfig.Handler = newContextInjector(serverConfig.Handler)
-	}
-
 	ServerInstance = &Server{
 		t: templates.NewTemplates(),
 		httpServer: &http.Server{
 			Addr:              serverConfig.Address,
-			Handler:           serverConfig.Handler,
+			Handler:           mux,
 			TLSConfig:         serverConfig.TLSConfig,
 			ReadTimeout:       serverConfig.ReadTimeout,
 			ReadHeaderTimeout: serverConfig.ReadHeaderTimeout,
@@ -142,7 +134,7 @@ func NewServer(config ...ServerConfig) *Server {
 			BaseContext:       serverConfig.BaseContext,
 			ConnContext:       serverConfig.ConnContext,
 		},
-		router:         serverConfig.Handler.(*http.ServeMux),
+		router:         mux.mux,
 		sessionManager: serverConfig.SessionManager,
 		sessionKey:     serverConfig.SessionKey,
 		logger:         serverConfig.ErrorLog,
