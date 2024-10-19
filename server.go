@@ -141,12 +141,17 @@ func NewServer(config ...ServerConfig) *Server {
 		dateFormat:     serverConfig.DateFormat,
 		logLevel:       serverConfig.LogLevel,
 	}
+
 	return ServerInstance
 }
 
 // Start starts the server.
 func (s *Server) Start() error {
 	slog.Info("Server started", "address", s.httpServer.Addr)
+	err := ServerInstance.t.Parse()
+	if err != nil {
+		return err
+	}
 	return s.httpServer.ListenAndServe()
 }
 
