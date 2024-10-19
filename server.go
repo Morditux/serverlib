@@ -96,7 +96,7 @@ func NewServer(config ...ServerConfig) *Server {
 		serverConfig = ServerConfig{
 			Address:        ":8080",
 			SessionManager: sessions.NewMemorySessions(),
-			SessionKey:     uuid.New().String(),
+			SessionKey:     "serverlibtestmode",
 		}
 	} else {
 		serverConfig = config[0]
